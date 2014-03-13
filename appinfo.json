@@ -1,0 +1,18 @@
+{
+  "uuid": "38700eb1-3c82-4c05-8e29-2bc0731ef09b",
+  "shortName": "Pebble12Javascript",
+  "longName": "Pebble12Javascript",
+  "capabilities": [ "configurable" ],
+  "companyName": "MakeAwesomeHappen",
+  "versionCode": 1,
+  "versionLabel": "1.0.0",
+  "watchapp": {
+    "watchface": false
+  },
+  "appKeys": {
+    "dummy": 0
+  },
+  "resources": {
+    "media": []
+  }
+}
