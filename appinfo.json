@@ -11,9 +11,12 @@
   },
   "appKeys": {
     "timezoneOffset": 42,
-    "jsReady": "0",
+    "jsReady": 0,
     "noAccessToken" : 3,
-    "verificationCode" : 4
+    "verificationCode" : 4,
+    "gotTokens" : 5,
+    "accessToken" : 6,
+    "refreshToken" : 7
   },
   "resources": {
     "media": []
