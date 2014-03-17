@@ -10,7 +10,10 @@
     "watchface": false
   },
   "appKeys": {
-    "dummy": 0
+    "timezoneOffset": 42,
+    "jsReady": "0",
+    "noAccessToken" : 3,
+    "verificationCode" : 4
   },
   "resources": {
     "media": []
