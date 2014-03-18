@@ -58,10 +58,11 @@ void in_received_handler(DictionaryIterator *iter, void *context) {
 
 	  accessToken = getAccessToken->value->cstring;
 	  persist_write_string(ACCESS_TOKEN,accessToken);
-	  APP_LOG(APP_LOG_LEVEL_DEBUG,"WROTE THE TOKENS TO STORAGE");
-
 	}
 	if(getRefreshToken) {
+	  APP_LOG(APP_LOG_LEVEL_DEBUG,"GOT REFRESH TOKEN, IT IS BELOW");
+	  APP_LOG(APP_LOG_LEVEL_DEBUG,getRefreshToken->value->cstring);
+
 	  refreshToken = getRefreshToken->value->cstring;
 	  persist_write_string(REFRESH_TOKEN,refreshToken);
 	}
@@ -90,11 +91,9 @@ void determine_token_status() {
 		//ALSO PASS BACK THE REFRESH TOKEN.
 		persist_read_string(REFRESH_TOKEN,refresh_key,128);
 		dict_write_cstring(iter,REFRESH_TOKEN,refresh_key);
-                //check to see if this token still works. If it does, build window normally. Else, try the refresh_token_key
 
         } else {
                 APP_LOG(APP_LOG_LEVEL_DEBUG, "No access token. Asking js for token...");
-//              text_layer_set_text(text_layer,"Acquiring token...");
 		Tuplet value = TupletInteger(NO_ACCESS_TOKEN,1);
                 dict_write_tuplet(iter, &value);
 		app_message_outbox_send();
@@ -133,6 +132,10 @@ static void window_unload(Window *window) {
 }
 
 static void init(void) {
+  //DEBUG ONLY, COMMENT OUT FINAL COMMIT
+  //  persist_delete(ACCESS_TOKEN);
+  //  persist_delete(REFRESH_TOKEN);
+
   window = window_create();
   window_set_fullscreen(window,true);
   window_set_window_handlers(window, (WindowHandlers) {
