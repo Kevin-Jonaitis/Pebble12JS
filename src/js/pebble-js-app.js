@@ -74,7 +74,6 @@ function failure_delivery(e) {
 		+ " Error is: " + e.error.message);
 }
 
-
 Pebble.addEventListener("appmessage",
   function(e) {
     if(e.payload.noAccessToken != undefined) {
@@ -121,7 +120,6 @@ function getAccessToken(data) {
     }
     token_request.send(data);
 }
-
 
 function retrieveCalendars() {
     var getCalendars = new XMLHttpRequest();
@@ -189,12 +187,51 @@ function freeBusyRequest(data) {
 	if (req.readyState == 4 && req.status == 200) {
 	    if(req.status == 200) {
                 data = JSON.parse(req.responseText);
+		sendCalendarData(data);
 	    } else { console.log("ERROR ON FREEBUSY REQUEST OH NO"); }
 	}
     }
     req.send(data);
 }
 
+
+/**
+Send calendar data to the pebble, after formatting it
+**/
+function sendCalendarData(data) {
+    var offseter = new Date();
+    var offsetSeconds = offseter.getTimezoneOffset() * 60;
+    console.log("OFFSET SECONDS:" + offsetSeconds);
+    var times = [];
+    var formattedTime = [];
+    for (calendar in data["calendars"]){
+	appointments = data["calendars"][calendar]["busy"];
+	for (var i = 0; i < appointments.length; i++){
+	    var startTime = Date.parse(appointments[i]["start"])/1000; //Convert from ms to s
+	    var endTime = Date.parse(appointments[i]["end"])/1000; //Convert from ms to s
+	    startTime = startTime - offsetSeconds;
+	    endTime = endTime - offsetSeconds;
+	    var combinedTime = startTime + "." + endTime + "."; //Second "." allows to defferentiate from other combos
+	    //combinedTime = combinedTime.substring(0,combinedTime.length - 1); //Remove the last .
+	    times.push(combinedTime);
+	}
+    }
+    console.log(times);
+    var message = {};
+    message["times"] = [];
+    var counter = 100;
+    //times[times.length-1] = times[times.length-1].substring(0,times[times.length-1] - 1); //Remove the last .
+    for (var i = 0; i < times.length; i++) {
+	message["times"].push(counter);
+	message[counter] = times[i];
+	counter++;
+	//message["times"].push(times[i]);
+    }
+    console.log("THE VALUES" + message["times"]);
+    console.log(message[100]);
+    console.log(message[101]);
+    Pebble.sendAppMessage(message,successful_delivery,failure_delivery);
+ }
 
 //Format the date in a way that is acceppted by Google Calendar's HTTP requests
 function formatOffset(d) {

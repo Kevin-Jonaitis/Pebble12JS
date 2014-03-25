@@ -1,6 +1,13 @@
-
-#include <pebble.h>
+//#include "time.h"
+//#include <pebble.h>
+#include "pebble.h"
 #include "Pebble12Javascript.h"
+//#include <stddef.h>
+//#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <time.h>
+
 static Window *window;
 static TextLayer *text_layer;
 static TextLayer *top_layer;
@@ -12,6 +19,97 @@ const int VERIFICATION_CODE = 4;
 const int GOT_TOKENS = 5;
 const int ACCESS_TOKEN = 6;
 const int REFRESH_TOKEN = 7;
+const int TIMES = 8; //Free/busy times
+
+const int INITAL_ARRAY_SIZE = 48; //We shouldn't have more than 48 events in a 24 hour period, becuase that's quite a bit.
+
+
+//Utility method for splitting strings.
+char *
+strtok(s, delim)
+	register char *s;
+	register const char *delim;
+{
+	register char *spanp;
+	register int c, sc;
+	char *tok;
+	static char *last;
+
+
+	if (s == NULL && (s = last) == NULL)
+		return (NULL);
+
+	/*
+	 * Skip (span) leading delimiters (s += strspn(s, delim), sort of).
+	 */
+cont:
+	c = *s++;
+	for (spanp = (char *)delim; (sc = *spanp++) != 0;) {
+		if (c == sc)
+			goto cont;
+	}
+
+	if (c == 0) {		/* no non-delimiter characters */
+		last = NULL;
+		return (NULL);
+	}
+	tok = s - 1;
+
+	/*
+	 * Scan token (scan for delimiters: s += strcspn(s, delim), sort of).
+	 * Note that delim must have one NUL; we stop if we see that, too.
+	 */
+	for (;;) {
+		c = *s++;
+		spanp = (char *)delim;
+		do {
+			if ((sc = *spanp++) == c) {
+				if (c == 0)
+					s = NULL;
+				else
+					s[-1] = 0;
+				last = s;
+				return (tok);
+			}
+		} while (sc != 0);
+	}
+	/* NOTREACHED */
+}
+
+typedef struct {
+  long startTime;
+  long endTime;
+} Event;
+
+typedef struct {
+  Event *array;
+  size_t used;
+  size_t size;
+  
+} Array;
+
+void initArray(Array *a) {
+  a->array = (Event *)malloc(INITAL_ARRAY_SIZE * sizeof(Event));
+  a->used = 0;
+  a->size = INITAL_ARRAY_SIZE;
+}
+
+void insertArray(Array *a, Event element) {
+  if (a->used == a->size) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "WE COMPLETELY FILLED UP THE ARRAY THIS IS A PROBLEM!"); 
+  } else {
+  a->array[a->used++] = element;
+  }
+}
+
+void freeArray(Array *a) {
+  free(a->array);
+  a->array = NULL;
+  a->used = a->size = 0;
+}
+
+Array events;
+
 
 void out_sent_handler(DictionaryIterator *sent, void *context) {
    // outgoing message was delivered
@@ -28,50 +126,159 @@ void in_received_handler(DictionaryIterator *iter, void *context) {
   char *accessToken;
   char *refreshToken;
   //Check for fields you expect to receive
-	Tuple *js_ready  = dict_find(iter,JS_READY);
-	//	int addOrRemove = (int) addOrRem->value->data[0];
-	Tuple *code = dict_find(iter,VERIFICATION_CODE);
-	Tuple *gotTokens = dict_find(iter,GOT_TOKENS);
-	Tuple *getAccessToken = dict_find(iter,ACCESS_TOKEN);
-	Tuple *getRefreshToken = dict_find(iter,REFRESH_TOKEN);
-	
-	if(js_ready) {
-	  APP_LOG(APP_LOG_LEVEL_DEBUG,"JAVASCRIPT IS LOADED");
-	  determine_token_status();
-	}
-	if(code) {
-	  text_layer_set_text(top_layer, "Please open the configuration window and enter the following code when prompted:");
-	  char *verification_code = code->value->cstring; //DO I NEED TO FREE THIS MEMORY LATER????
-	  text_layer_set_text(text_layer, verification_code);
-	  text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
-	  //layer_mark_dirty(text_layer_get_layer(text_layer));
-	  layer_mark_dirty(window_get_root_layer(window));
-	}
-	if(gotTokens) {
-	  APP_LOG(APP_LOG_LEVEL_DEBUG,"WE GOT THE TOKENS, ABOUT TO WRITE TO STORAGE");
-	  layer_remove_from_parent(text_layer_get_layer(top_layer));
-	  layer_remove_from_parent(text_layer_get_layer(text_layer));
-	}
-	if(getAccessToken) {
-	  APP_LOG(APP_LOG_LEVEL_DEBUG,"WRITING TOKENS TO STORAGE");
-          APP_LOG(APP_LOG_LEVEL_DEBUG,getAccessToken->value->cstring);
+  Tuple *js_ready  = dict_find(iter,JS_READY);
+  //	int addOrRemove = (int) addOrRem->value->data[0];
+  Tuple *code = dict_find(iter,VERIFICATION_CODE);
+  Tuple *gotTokens = dict_find(iter,GOT_TOKENS);
+  Tuple *getAccessToken = dict_find(iter,ACCESS_TOKEN);
+  Tuple *getRefreshToken = dict_find(iter,REFRESH_TOKEN);
+  Tuple *times = dict_find(iter,TIMES);
+  
+  if(js_ready) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"JAVASCRIPT IS LOADED");
+    determine_token_status();
+  }
+  if(code) {
+    text_layer_set_text(top_layer, "Please open the configuration window and enter the following code when prompted:");
+    char *verification_code = code->value->cstring; //DO I NEED TO FREE THIS MEMORY LATER????
+    text_layer_set_text(text_layer, verification_code);
+    text_layer_set_font(text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+    //layer_mark_dirty(text_layer_get_layer(text_layer));
+    layer_mark_dirty(window_get_root_layer(window));
+  }
+  if(gotTokens) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"WE GOT THE TOKENS clearing Loading... screen");
+    text_layer_set_text(text_layer,"Fetching calendar data...");
+    layer_remove_from_parent(text_layer_get_layer(top_layer));
+    layer_mark_dirty(window_get_root_layer(window));
+    //    layer_mark_dirty(text_layer_get_layer(text_layer));                
+  }
+  
+  if(getAccessToken) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"WRITING TOKENS TO STORAGE");
+    APP_LOG(APP_LOG_LEVEL_DEBUG,getAccessToken->value->cstring);
+    
+    accessToken = getAccessToken->value->cstring;
+    int return_value = persist_write_string(ACCESS_TOKEN,accessToken);
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"PERSIST WRITE RETURN VALUE: %d",return_value);
 
-	  accessToken = getAccessToken->value->cstring;
-	  persist_write_string(ACCESS_TOKEN,accessToken);
-	}
-	if(getRefreshToken) {
-	  APP_LOG(APP_LOG_LEVEL_DEBUG,"GOT REFRESH TOKEN, IT IS BELOW");
-	  APP_LOG(APP_LOG_LEVEL_DEBUG,getRefreshToken->value->cstring);
+    
+  }
+  
+  if(getRefreshToken) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"GOT REFRESH TOKEN, IT IS BELOW");
+    APP_LOG(APP_LOG_LEVEL_DEBUG,getRefreshToken->value->cstring);
+    
+    refreshToken = getRefreshToken->value->cstring;
+    persist_write_string(REFRESH_TOKEN,refreshToken);
+    
+  }
+  if(times) {
+    freeArray(&events);
+    initArray(&events);
 
-	  refreshToken = getRefreshToken->value->cstring;
-	  persist_write_string(REFRESH_TOKEN,refreshToken);
-	}
+    int length = times->length;
+    for(int i = 0; i < length; i ++) {
+      int tupleIndex = times->value->data[i];
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"STRING VALUE %d",(int) times->value->data[0]);
+      Tuple *timeTuple = dict_find(iter,tupleIndex);
+      char *timeString = timeTuple->value->cstring;
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"A timeString %s", timeString);
+
+      char times_string[22];
+      char *time_part;
+      strcpy(times_string,timeString);
+      time_part = strtok(times_string,".");
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"START TIME: %s",time_part);
+      long startTime = atol(time_part);
+      time_part = strtok(NULL,".");
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"END TIME: %s",time_part);
+      long endTime = atol(time_part);
+      Event e = {startTime,endTime};
+      insertArray(&events,e);
+      
+    }
+  
+    time_t now;
+    //    time_t t;
+    time(&now);
+
+    long seconds = (long) now;
+    time_t test = (time_t) events.array[0].endTime;
+    // struct tm tmlol = {0};
+    //strptime("12344656","%s",&tmlol);
+    //t = mktime(&tmlol);
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"TEST TIME: %lu", (long) test);
+
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"NOW NOW TIME: %lu", seconds);
+    long difference = (long) difftime(test,now);
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"DIFFERENCE IN MINUTES FOR START TIME: %lu", difference);
 
 
+
+    //  long test = (long) nownowTime;
+    //    APP_LOG(APP_LOG_LEVEL_DEBUG,"NOW NOW TIME: %lu", test);
+
+    
+
+    
+    
+
+    /* //    freeArray(&events); // Clear all old events */
+    /* //initArray(&events); // Create a new version of the array */
+    /*  char times_string[256]; */
+    /* layer_remove_from_parent(text_layer_get_layer(text_layer)); */
+    /* //char * times_string = malloc(strlen(times->value->cstring)); */
+    /* strcpy(times_string,times->value->cstring); */
+    /* APP_LOG(APP_LOG_LEVEL_DEBUG,"HERE ARE THE TIMES OF %s",times_string); */
+
+    /* char *time_part; */
+    /* char * end_time; */
+    /* time_part = strtok(times_string,"."); */
+    /* //APP_LOG(APP_LOG_LEVEL_DEBUG,"TESTING: %s",time); */
+    /* while(time_part != NULL) { */
+    /*   //Times are stored in pairs of 2 */
+    /*   APP_LOG(APP_LOG_LEVEL_DEBUG,"Start time: %s\n",time_part); */
+    /*   long startTime = atol(time_part); */
+    /*   time_part = strtok(NULL,"."); */
+    /*   APP_LOG(APP_LOG_LEVEL_DEBUG,"END TIME: %s\n",time_part); */
+
+    /*   if(time_part == NULL){ //We reached the last period */
+    /* 	break; */
+    /*   } */
+      
+    /*        time_part = strtok(NULL,"."); */
+  
+    /* 	   //strptime("1234","%s",&endTime); */
+    /* 	   //long endTime = strtol(time,&end_time,10); */
+      
+    /*         time_t startTime_t = (time_t) startTime; */
+
+    /*         time_t now; */
+    /*         time(&now); */
+    /*         APP_LOG(APP_LOG_LEVEL_DEBUG,"START: %lu\n",startTime); */
+    /*         APP_LOG(APP_LOG_LEVEL_DEBUG,"NOW: %lu\n",now); */
+
+
+    /*   //      double seconds = difftime(now,startTime_t); */
+    /*   //      double minutes =  seconds/60; */
+    /*   //      int min_int = (int) minutes; */
+
+    /*   //      APP_LOG(APP_LOG_LEVEL_DEBUG,"%f minutes have passed since the start of the event",minutes); */
+    /*   //      APP_LOG(APP_LOG_LEVEL_DEBUG,"%d minutes have passed since the start of the event",min_int); */
+
+    /*   //  Event e = {startTime,endTime}; */
+    /*   //insertArray(&events,e); */
+    /* //  //      Event e = {timeStart,timeEnd); */
+    /* // //insertArray(&events,e); */
+    /* ////do something with the time */
+    /*  } */
+    /* //free(times_string); */
+  }
 }
 
 
- void in_dropped_handler(AppMessageResult reason, void *context) {
+void in_dropped_handler(AppMessageResult reason, void *context) {
    // incoming message dropped
  }
 
@@ -91,6 +298,9 @@ void determine_token_status() {
 		//ALSO PASS BACK THE REFRESH TOKEN.
 		persist_read_string(REFRESH_TOKEN,refresh_key,128);
 		dict_write_cstring(iter,REFRESH_TOKEN,refresh_key);
+
+		text_layer_set_text(text_layer,"Fetching calendar data...");
+		layer_mark_dirty(text_layer_get_layer(text_layer));              
 
         } else {
                 APP_LOG(APP_LOG_LEVEL_DEBUG, "No access token. Asking js for token...");
@@ -157,6 +367,7 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  freeArray(&events); //Empty the array
   layer_destroy(text_layer_get_layer(top_layer)); //We are done with this, don't need it anymore                                                    
   layer_destroy(text_layer_get_layer(text_layer)); //We are done with this, don't need it anymore                                                    
   window_destroy(window);
@@ -171,8 +382,6 @@ int main(void) {
   app_event_loop();
   deinit();
 }
-
-
 
 //Utility method
 char *translate_error(AppMessageResult result) {
